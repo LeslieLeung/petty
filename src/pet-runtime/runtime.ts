@@ -38,6 +38,13 @@ export interface PetRuntimeOptions {
 }
 
 type TextureLoadTarget = string | { src: string; loadParser: 'loadTextures' }
+const KEYBOARD_ACTIVITY_BURST_MS = 3_000
+const KEYBOARD_ACTIVITY_RESTART_COOLDOWN_MS = 1_000
+
+export interface UserInputActivityPayload {
+  kind: 'keyboard'
+  at: number
+}
 
 async function loadTexture(loadTarget: TextureLoadTarget): Promise<Texture> {
   const isTauri = '__TAURI_INTERNALS__' in window
@@ -115,6 +122,8 @@ export class PetRuntime {
   private canvasDragEnd: ((e: PointerEvent) => void) | null = null
   private autonomousMove: { clipKey: string; remainingPx: number } | null = null
   private currentClipDirection: MovementDirection | undefined
+  private keyboardActivityUntil = 0
+  private lastKeyboardActivityClipAt = 0
 
   constructor(
     private readonly manifest: RuntimeManifest,
@@ -272,6 +281,23 @@ export class PetRuntime {
     )
   }
 
+  notifyKeyboardActivity(_payload?: UserInputActivityPayload): void {
+    const now = performance.now()
+    this.inactivity.markInteraction()
+    this.keyboardActivityUntil = now + KEYBOARD_ACTIVITY_BURST_MS
+
+    if (this.isDragging || now - this.lastKeyboardActivityClipAt < KEYBOARD_ACTIVITY_RESTART_COOLDOWN_MS) return
+
+    this.lastKeyboardActivityClipAt = now
+    const candidates = [
+      ...(this.manifest.semanticRoles.busy ?? []),
+      ...(this.manifest.semanticRoles.observe ?? []),
+      ...(this.manifest.interactions.hover ?? []),
+      this.manifest.meta.defaultState,
+    ]
+    this.playClip(this.stateMachine.requestInteraction(candidates, 'keyboard-activity'))
+  }
+
   private update(deltaMs: number): void {
     if (!this.player || !this.sprite) return
 
@@ -279,6 +305,14 @@ export class PetRuntime {
     this.stepAutonomousMovement(deltaMs)
 
     const now = performance.now()
+    const snapshot = this.stateMachine.snapshot
+    if (this.keyboardActivityUntil > 0 && now >= this.keyboardActivityUntil) {
+      this.keyboardActivityUntil = 0
+      if (snapshot.reason === 'keyboard-activity') {
+        this.playClip(this.stateMachine.settle())
+      }
+    }
+
     if (now - this.lastSchedulerTick >= 300) {
       this.lastSchedulerTick = now
       const decision = this.scheduler.tick()

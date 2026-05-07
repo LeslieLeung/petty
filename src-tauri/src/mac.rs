@@ -48,6 +48,29 @@ struct CGSize {
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGDisplayScreenSize(display: CGDirectDisplayID) -> CGSize;
+    fn CGEventSourceSecondsSinceLastEventType(source_state_id: u32, event_type: u32) -> f64;
+}
+
+const CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: u32 = 0;
+const CG_EVENT_KEY_DOWN: u32 = 10;
+const KEYBOARD_ACTIVITY_RECENT_MS: f64 = 250.0;
+
+pub struct KeyboardActivityDetector;
+
+impl KeyboardActivityDetector {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn detected(&mut self) -> bool {
+        let seconds = unsafe {
+            CGEventSourceSecondsSinceLastEventType(
+                CG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
+                CG_EVENT_KEY_DOWN,
+            )
+        };
+        seconds.is_finite() && seconds >= 0.0 && seconds * 1_000.0 <= KEYBOARD_ACTIVITY_RECENT_MS
+    }
 }
 
 // ── Multi-monitor window patch ────────────────────────────────────────────────

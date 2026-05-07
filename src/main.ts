@@ -1,7 +1,7 @@
 import './styles.css'
 import { invoke } from '@tauri-apps/api/core'
 import { emit, listen } from '@tauri-apps/api/event'
-import { PetRuntime } from './pet-runtime/runtime'
+import { PetRuntime, type UserInputActivityPayload } from './pet-runtime/runtime'
 import { petModels, type PetModelDefinition } from './pet-models'
 import { applyLanguageMetadata, t, type LanguagePreference } from './i18n'
 import type { LegacyPetJson } from './pet-runtime/resource/legacy-adapter'
@@ -145,6 +145,9 @@ if ('__TAURI_INTERNALS__' in window) {
   listen<LanguagePreference>('language-changed', () => {
     applyLanguageMetadata('Petty')
     menu.updateLabels()
+  }).catch(console.error)
+  listen<UserInputActivityPayload>('user-input-activity', (event) => {
+    runtime?.notifyKeyboardActivity(event.payload)
   }).catch(console.error)
 }
 

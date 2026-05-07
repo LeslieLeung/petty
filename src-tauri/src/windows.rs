@@ -16,6 +16,7 @@ use windows::Win32::Graphics::Gdi::{
     VERTSIZE,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
 };
@@ -24,6 +25,30 @@ use crate::{HostCursorSnapshot, MonitorRect};
 
 const MONITORINFOF_PRIMARY: u32 = 1;
 const DEFAULT_DPI: f64 = 96.0;
+
+pub struct KeyboardActivityDetector {
+    previous_down: [bool; 256],
+}
+
+impl KeyboardActivityDetector {
+    pub fn new() -> Self {
+        Self {
+            previous_down: [false; 256],
+        }
+    }
+
+    pub fn detected(&mut self) -> bool {
+        let mut pressed = false;
+        for virtual_key in 0x08..=0xfe {
+            let is_down = unsafe { GetAsyncKeyState(virtual_key) } as u16 & 0x8000 != 0;
+            if is_down && !self.previous_down[virtual_key as usize] {
+                pressed = true;
+            }
+            self.previous_down[virtual_key as usize] = is_down;
+        }
+        pressed
+    }
+}
 
 fn hwnd_from_window<R: Runtime>(window: &tauri::Window<R>) -> Result<HWND, String> {
     window.hwnd().map_err(|e| e.to_string())

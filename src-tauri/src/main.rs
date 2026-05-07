@@ -1,5 +1,7 @@
 use serde::Serialize;
-use tauri::{Manager, Runtime};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::{Emitter, Manager, Runtime};
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -43,6 +45,22 @@ pub struct HostCursorSnapshot {
     cursor_y: f64,
     monitors: Vec<MonitorRect>,
 }
+
+#[derive(Debug, Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+struct UserInputActivity {
+    kind: &'static str,
+    at: u64,
+}
+
+#[cfg(target_os = "macos")]
+type KeyboardActivityDetector = mac::KeyboardActivityDetector;
+#[cfg(target_os = "windows")]
+type KeyboardActivityDetector = windows::KeyboardActivityDetector;
+
+const KEYBOARD_ACTIVITY_EVENT: &str = "user-input-activity";
+const KEYBOARD_ACTIVITY_POLL_MS: u64 = 100;
+const KEYBOARD_ACTIVITY_THROTTLE_MS: u64 = 1_000;
 
 #[tauri::command]
 fn get_app_paths<R: Runtime>(app: tauri::AppHandle<R>) -> AppPaths {
@@ -241,6 +259,51 @@ fn follow_pet_window_to_cursor_screen<R: Runtime>(
     }
 }
 
+fn start_keyboard_activity_monitor(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let poll_interval = Duration::from_millis(KEYBOARD_ACTIVITY_POLL_MS);
+        let throttle = Duration::from_millis(KEYBOARD_ACTIVITY_THROTTLE_MS);
+        let mut last_emit = Instant::now() - throttle;
+        let mut detector = KeyboardActivityDetector::new();
+
+        loop {
+            if detector.detected() && last_emit.elapsed() >= throttle {
+                last_emit = Instant::now();
+                let _ = app.emit(
+                    KEYBOARD_ACTIVITY_EVENT,
+                    UserInputActivity {
+                        kind: "keyboard",
+                        at: unix_time_millis(),
+                    },
+                );
+            }
+
+            thread::sleep(poll_interval);
+        }
+    });
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+struct KeyboardActivityDetector;
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+impl KeyboardActivityDetector {
+    fn new() -> Self {
+        Self
+    }
+
+    fn detected(&mut self) -> bool {
+        false
+    }
+}
+
+fn unix_time_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -270,6 +333,7 @@ fn main() {
                     window.open_devtools();
                 }
             }
+            start_keyboard_activity_monitor(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
