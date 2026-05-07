@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Frontend build (Vite → `frontendDist` in tauri.conf)
+dist/
+dist-ssr/
+
+# Vite
+*.local
+
+# Rust / Tauri
+src-tauri/target/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / tooling (uncomment if you do not commit these)
+# .idea/
+# .vscode/
+
+# TypeScript
+*.tsbuildinfo
