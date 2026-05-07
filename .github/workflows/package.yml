@@ -1,0 +1,102 @@
+name: Package
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS universal
+            os: macos-14
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            command: npm run package:mac:universal
+            artifact_name: petty-macos-universal
+            artifact_paths: |
+              src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          - name: Windows x86_64
+            os: windows-2022
+            rust_targets: x86_64-pc-windows-msvc
+            command: npm run package:windows:x86_64
+            artifact_name: petty-windows-x86_64
+            artifact_paths: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          - name: Windows arm64
+            os: windows-2022
+            rust_targets: aarch64-pc-windows-msvc
+            command: npm run package:windows:arm64
+            artifact_name: petty-windows-arm64
+            artifact_paths: |
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Install Windows bundlers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis wixtoolset --no-progress -y
+          $nsisBin = "${env:ProgramFiles(x86)}\NSIS"
+          $wixBin = Get-ChildItem "${env:ProgramFiles(x86)}" -Directory -Filter "WiX Toolset*" |
+            Sort-Object Name -Descending |
+            Select-Object -First 1 |
+            ForEach-Object { Join-Path $_.FullName "bin" }
+          if (Test-Path $nsisBin) {
+            $nsisBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+          if ($wixBin -and (Test-Path $wixBin)) {
+            $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync version
+        run: npm run version:sync
+
+      - name: Package
+        run: ${{ matrix.command }}
+
+      - name: Upload nightly artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.artifact_name }}-${{ github.sha }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+
+      - name: Upload release artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact_paths }}
+          fail_on_unmatched_files: true
