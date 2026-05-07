@@ -8,29 +8,48 @@ const PLATFORM_CONFIG = {
     host: "darwin",
     displayName: "macOS",
     bundles: ["app", "dmg"],
-    targetFlag: null,
+    defaultTarget: "universal",
+    targetMap: {
+      aarch64: "aarch64-apple-darwin",
+      x86_64: "x86_64-apple-darwin",
+      universal: "universal-apple-darwin",
+    },
   },
   windows: {
     host: "win32",
     displayName: "Windows",
     bundles: ["nsis", "msi"],
-    targetFlag: null,
+    defaultTarget: "x86_64",
+    targetMap: {
+      x86_64: "x86_64-pc-windows-msvc",
+      arm64: "aarch64-pc-windows-msvc",
+      aarch64: "aarch64-pc-windows-msvc",
+    },
   },
 };
 
 const platform = process.argv[2];
-const passthroughArgs = process.argv.slice(3);
+const rawArgs = process.argv.slice(3);
 
 if (!platform || !PLATFORM_CONFIG[platform]) {
-  console.error("Usage: npm run package:<mac|windows> [-- extra tauri build args]");
+  console.error("Usage: npm run package:<mac|windows> [arch] [-- extra tauri build args]");
   console.error("Examples:");
   console.error("  npm run package:mac");
+  console.error("  npm run package:mac:aarch64");
+  console.error("  npm run package:mac -- x86_64");
   console.error("  npm run package:windows");
   console.error("  npm run package:mac -- --no-sign");
   process.exit(1);
 }
 
 const config = PLATFORM_CONFIG[platform];
+let target = config.defaultTarget;
+let passthroughArgs = rawArgs;
+
+if ((platform === "macos" || platform === "windows") && rawArgs.length > 0 && !rawArgs[0].startsWith("-")) {
+  target = rawArgs[0];
+  passthroughArgs = rawArgs.slice(1);
+}
 
 if (process.platform !== config.host) {
   console.error(
@@ -43,8 +62,15 @@ if (process.platform !== config.host) {
 
 const args = ["tauri", "build", "--bundles", config.bundles.join(",")];
 
-if (config.targetFlag) {
-  args.push("--target", config.targetFlag);
+if (target) {
+  const targetFlag = config.targetMap[target];
+  if (!targetFlag) {
+    console.error(
+      `Invalid ${config.displayName} arch "${target}". Supported values: ${Object.keys(config.targetMap).join(", ")}`
+    );
+    process.exit(1);
+  }
+  args.push("--target", targetFlag);
 }
 
 args.push(...passthroughArgs);

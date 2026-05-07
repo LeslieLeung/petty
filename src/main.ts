@@ -36,6 +36,7 @@ const ACTIVE_MODEL_KEY = 'petty.active-model'
 const DEBUG_VISIBLE_KEY = 'petty.debug-visible'
 const ZOOM_KEY = 'petty.zoom'
 const KEEP_VISUAL_SIZE_KEY = 'petty.keep-visual-size-across-displays'
+const HOST_STARTUP_IPC_DELAY_MS = 300
 
 let activeModel = resolveModel(localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'hana')
 // `runtime` is guaranteed to be assigned before any event listener can use it (inside startApp).
@@ -44,6 +45,7 @@ let runtime!: PetRuntime
 // Monitor rects in CSS pixels relative to the window origin (populated in Tauri mode).
 let cachedMonitors: Rect[] = []
 let refreshMonitorsTimer: ReturnType<typeof setTimeout> | null = null
+let startDeferredClickThroughPolling: (() => void) | undefined
 
 async function refreshMonitorsFromHost(): Promise<void> {
   if (!('__TAURI_INTERNALS__' in window)) return
@@ -149,21 +151,16 @@ if ('__TAURI_INTERNALS__' in window) {
 // ── Startup ───────────────────────────────────────────────────────────────────
 
 async function startApp(): Promise<void> {
-  // In Tauri mode, fetch monitor work areas before creating the runtime so the pet
-  // starts inside the primary monitor's safe region.
-  if ('__TAURI_INTERNALS__' in window) {
-    try {
-      cachedMonitors = await invoke<Rect[]>('get_monitors')
-      console.log('[petty] window:', window.innerWidth, 'x', window.innerHeight, 'dpr=', window.devicePixelRatio)
-      console.log('[petty] monitors:', cachedMonitors)
-    } catch (error) {
-      console.warn('[petty] get_monitors failed', error)
-    }
-  }
   runtime = createRuntime(activeModel)
   await mountRuntime()
   if ('__TAURI_INTERNALS__' in window) {
-    void refreshMonitorsFromHost()
+    // Avoid hitting Tauri's WKURLSchemeHandler/IPC path while WebKit is still
+    // finishing the initial document and asset loads. Intel WebKit is notably
+    // easier to crash here if startup IPC races with custom protocol tasks.
+    window.setTimeout(() => {
+      void refreshMonitorsFromHost()
+      startDeferredClickThroughPolling?.()
+    }, HOST_STARTUP_IPC_DELAY_MS)
   }
 }
 
@@ -454,7 +451,9 @@ async function importFolder(files: FileList | null): Promise<void> {
 //  - When cursor leaves pet sprite (and menu is closed): re-enable ignore + poll.
 
 if ('__TAURI_INTERNALS__' in window) {
-  let isClickThrough = false
+  // Rust setup already enables click-through before the page loads. Start in
+  // sync with that state so we do not need an immediate startup invoke.
+  let isClickThrough = true
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
   function enableClickThrough(): void {
@@ -512,6 +511,9 @@ if ('__TAURI_INTERNALS__' in window) {
     if (!isClickThrough) enableClickThrough()
   })
 
-  // Start with click-through enabled (Rust setup also sets this, belt-and-suspenders).
-  enableClickThrough()
+  startDeferredClickThroughPolling = () => {
+    isClickThrough = true
+    invoke('set_cursor_ignore', { ignore: true }).catch(console.error)
+    startPolling()
+  }
 }

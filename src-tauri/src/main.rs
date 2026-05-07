@@ -3,6 +3,8 @@ use tauri::{Manager, Runtime};
 
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "windows")]
+mod windows;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,22 +72,26 @@ fn get_screen_info<R: Runtime>(window: tauri::Window<R>) -> ScreenInfo {
     }
 }
 
-/// Returns all available monitor work areas as logical CSS-pixel rects relative to the pet window
-/// origin. Multi-monitor and mixed-DPI safe — see `mac::get_monitors_main` for the macOS impl that
-/// works directly in NSScreen Cocoa points to avoid per-monitor scale mixing.
+/// Returns the active monitor work area as a logical CSS-pixel rect relative to
+/// the pet window origin. macOS and Windows keep the overlay fitted to one
+/// display at a time to avoid mixed-DPI webview coordinate drift.
 #[tauri::command]
 fn get_monitors<R: Runtime>(window: tauri::Window<R>) -> Result<Vec<MonitorRect>, String> {
     #[cfg(target_os = "macos")]
     {
         return mac::run_on_main(window, |w| mac::get_monitors_main(w));
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        return windows::get_monitors(&window);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         get_monitors_fallback(&window)
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn get_monitors_fallback<R: Runtime>(
     window: &tauri::Window<R>,
 ) -> Result<Vec<MonitorRect>, String> {
@@ -128,7 +134,11 @@ fn get_cursor_window_pos<R: Runtime>(window: tauri::Window<R>) -> Option<(f64, f
             .ok()
             .flatten()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::get_cursor_window_pos(&window)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let cursor = window.cursor_position().ok()?;
         let win_pos = window.outer_position().ok()?;
@@ -199,7 +209,11 @@ fn fit_pet_window_to_current_screen<R: Runtime>(app: tauri::AppHandle<R>) -> Res
     {
         return mac::fit_window_to_current_screen(&window);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        return windows::fit_window_to_current_screen(&window);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         expand_window_to_all_monitors_fallback(&window).map_err(|e| e.to_string())?;
         Ok(())
@@ -217,7 +231,11 @@ fn follow_pet_window_to_cursor_screen<R: Runtime>(
     {
         return mac::follow_window_to_cursor_screen(&window);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        return windows::follow_window_to_cursor_screen(&window);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         Ok(None)
     }
@@ -240,7 +258,9 @@ fn main() {
                 // window to the cursor's display during drag.
                 #[cfg(target_os = "macos")]
                 let _ = mac::fit_window_to_current_screen(&window);
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(target_os = "windows")]
+                let _ = windows::fit_window_to_current_screen(&window);
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                 let _ = expand_window_to_all_monitors_fallback(&window);
                 // Enable click-through by default; JS disables it when cursor is over the pet.
                 let _ = window.set_ignore_cursor_events(true);
@@ -268,7 +288,7 @@ fn main() {
         .expect("error while running desktop pet");
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn expand_window_to_all_monitors_fallback<R: Runtime>(
     window: &tauri::WebviewWindow<R>,
 ) -> tauri::Result<()> {

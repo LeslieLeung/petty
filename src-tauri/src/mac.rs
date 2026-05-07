@@ -68,8 +68,8 @@ extern "C" {
 }
 
 /// ObjC IMP that returns `frame_rect` unchanged, bypassing macOS's per-display
-/// frame constraint.  The calling convention matches ObjC method dispatch on
-/// both arm64 (register returns) and x86_64 (sret for structs > 16 bytes).
+/// frame constraint.
+#[cfg(not(target_arch = "x86_64"))]
 extern "C" fn constrain_frame_rect_passthrough(
     _this: *mut (),
     _sel: *const (),
@@ -77,6 +77,23 @@ extern "C" fn constrain_frame_rect_passthrough(
     _screen: *const (),
 ) -> NSRect {
     frame_rect
+}
+
+/// Intel macOS uses `objc_msgSend_stret` for `NSRect` returns, so the hidden
+/// return buffer is the first argument at the ABI level.
+#[cfg(target_arch = "x86_64")]
+extern "C" fn constrain_frame_rect_passthrough(
+    out: *mut NSRect,
+    _this: *mut (),
+    _sel: *const (),
+    frame_rect: NSRect,
+    _screen: *const (),
+) {
+    if !out.is_null() {
+        unsafe {
+            out.write(frame_rect);
+        }
+    }
 }
 
 static MULTI_MONITOR_PATCH: Once = Once::new();
@@ -335,7 +352,11 @@ fn screen_containing_point(mtm: MainThreadMarker, point: NSPoint) -> Option<Reta
             return Some(screen);
         }
         let distance = rect_center_distance(frame, point);
-        if nearest.as_ref().map(|(_, best)| distance < *best).unwrap_or(true) {
+        if nearest
+            .as_ref()
+            .map(|(_, best)| distance < *best)
+            .unwrap_or(true)
+        {
             nearest = Some((screen, distance));
         }
     }

@@ -15,8 +15,13 @@
     "tauri:build": "tauri build",
     "prepackage:mac": "npm run version:sync",
     "package:mac": "node scripts/package.mjs macos",
+    "package:mac:aarch64": "node scripts/package.mjs macos aarch64",
+    "package:mac:x86_64": "node scripts/package.mjs macos x86_64",
+    "package:mac:universal": "node scripts/package.mjs macos universal",
     "prepackage:windows": "npm run version:sync",
-    "package:windows": "node scripts/package.mjs windows"
+    "package:windows": "node scripts/package.mjs windows",
+    "package:windows:x86_64": "node scripts/package.mjs windows x86_64",
+    "package:windows:arm64": "node scripts/package.mjs windows arm64"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
