@@ -1,6 +1,6 @@
 {
   "name": "petty",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,12 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:dev-console": "PETTY_DEVTOOLS=1 tauri dev",
+    "version:sync": "node scripts/sync-version.mjs",
+    "pretauri:build": "npm run version:sync",
     "tauri:build": "tauri build",
+    "prepackage:mac": "npm run version:sync",
     "package:mac": "node scripts/package.mjs macos",
+    "prepackage:windows": "npm run version:sync",
     "package:windows": "node scripts/package.mjs windows"
   },
   "dependencies": {
