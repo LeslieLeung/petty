@@ -34,7 +34,7 @@ function replacePackageVersionToml(content, version) {
 
 function replacePackageVersionLock(content, packageName, version) {
   const packagePattern = new RegExp(
-    `(\\[\\[package\\]\\]\\nname = "${packageName}"\\nversion = )"[^"]+"`
+    `(\\[\\[package\\]\\]\\r?\\nname = "${packageName}"\\r?\\nversion = )"[^"]+"`
   );
   if (!packagePattern.test(content)) {
     throw new Error(`Could not find ${packageName} package version in src-tauri/Cargo.lock`);
