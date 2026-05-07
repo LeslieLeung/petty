@@ -33,6 +33,8 @@ export interface PetRuntimeOptions {
   refreshHostMonitorLayout?: () => void
   /** During a native drag, move the host window to the cursor's display and return cursor-local coords. */
   trackHostCursorScreen?: () => Promise<{ x: number; y: number; monitors?: Rect[] } | null>
+  /** Keep the pet's physical visual size stable across displays with different scale factors. */
+  keepVisualSizeAcrossDisplays?: boolean
 }
 
 type TextureLoadTarget = string | { src: string; loadParser: 'loadTextures' }
@@ -101,6 +103,9 @@ export class PetRuntime {
   private hostDragPollInFlight = false
   private pointerDownAt = 0
   private lastClickAt = 0
+  private userScale: number
+  private referenceMmPerCssPx?: number
+  private keepVisualSizeAcrossDisplays = true
   private transform: PetTransform
   private _destroyed = false
   // Native canvas handlers attached on pointerdown and removed on pointerup/cancel.
@@ -109,12 +114,15 @@ export class PetRuntime {
   private canvasDragMove: ((e: PointerEvent) => void) | null = null
   private canvasDragEnd: ((e: PointerEvent) => void) | null = null
   private autonomousMove: { clipKey: string; remainingPx: number } | null = null
+  private currentClipDirection: MovementDirection | undefined
 
   constructor(
     private readonly manifest: RuntimeManifest,
     private readonly options: PetRuntimeOptions = {},
   ) {
     this.monitors = options.monitors
+    this.keepVisualSizeAcrossDisplays = options.keepVisualSizeAcrossDisplays ?? true
+    this.referenceMmPerCssPx = this.currentMonitorMmPerCssPx()
     this.stateMachine = new PetStateMachine(manifest)
     this.scheduler = new BehaviorScheduler(manifest, this.stateMachine, this.inactivity)
 
@@ -122,7 +130,8 @@ export class PetRuntime {
     // OS work area so the pet is not hidden by the Dock/taskbar on first launch.
     const primary = this.monitors?.find((m) => (m as Rect & { isPrimary?: boolean }).isPrimary)
       ?? this.monitors?.[0]
-    const scale = manifest.meta.defaultScale
+    this.userScale = manifest.meta.defaultScale
+    const scale = this.actualDisplayScale()
     const spawnPoint = defaultPetSpawnPoint(primary ?? viewportWorkarea(), {
       width: manifest.atlas.cellWidth * scale,
       height: manifest.atlas.cellHeight * scale,
@@ -224,14 +233,20 @@ export class PetRuntime {
   }
 
   setScale(scale: number): void {
-    this.transform.scale = scale / (window.devicePixelRatio || 1)
-    this.clampToSingleWorkarea()
-    this.applyTransform()
+    this.userScale = scale
+    this.applyDisplayScale()
+  }
+
+  setKeepVisualSizeAcrossDisplays(enabled: boolean): void {
+    this.keepVisualSizeAcrossDisplays = enabled
+    this.applyDisplayScale()
   }
 
   /** Replace monitor work areas (window-relative CSS px); re-snaps the pet to valid work areas. */
   setMonitors(monitors: Rect[] | undefined): void {
     this.monitors = monitors
+    this.captureReferencePhysicalScale()
+    this.refreshDisplayScale()
     if (this.isDragging) {
       this.positionDebugText()
       return
@@ -277,8 +292,9 @@ export class PetRuntime {
   private playClip(clipKey: string): void {
     const clip = this.manifest.clips[clipKey] ?? this.manifest.clips[this.manifest.meta.defaultState]
     this.player?.play(clip)
-    if (clip.key.includes('left')) this.transform.facing = 'left'
-    if (clip.key.includes('right')) this.transform.facing = 'right'
+    this.currentClipDirection = this.movementDirectionForClip(clip.key)
+    if (this.currentClipDirection === 'left') this.transform.facing = 'left'
+    if (this.currentClipDirection === 'right') this.transform.facing = 'right'
   }
 
   private attachInteraction(): void {
@@ -405,6 +421,8 @@ export class PetRuntime {
       if (!snapshot || !this.isDragging || !this.dragPointerOffset) return
       if (snapshot.monitors && snapshot.monitors.length > 0) {
         this.monitors = snapshot.monitors
+        this.captureReferencePhysicalScale()
+        this.refreshDisplayScale()
         this.positionDebugText()
       }
       this.transform.x = snapshot.x - this.dragPointerOffset.x
@@ -508,25 +526,65 @@ export class PetRuntime {
   private applyTransform(): void {
     this.petContainer.x = this.transform.x
     this.petContainer.y = this.transform.y
-    this.petContainer.scale.x = this.transform.facing === 'right' ? this.transform.scale : -this.transform.scale
+    this.petContainer.scale.x = this.shouldMirrorCurrentClip() ? -this.transform.scale : this.transform.scale
     this.petContainer.scale.y = this.transform.scale
+  }
+
+  private shouldMirrorCurrentClip(): boolean {
+    // Directional clips already contain the correct left/right artwork. Only
+    // generic and non-directional clips need runtime mirroring to preserve facing.
+    if (this.currentClipDirection === 'left' || this.currentClipDirection === 'right') return false
+    return this.transform.facing === 'left'
+  }
+
+  private actualDisplayScale(): number {
+    if (!this.keepVisualSizeAcrossDisplays) return this.userScale
+    const currentMmPerCssPx = this.currentMonitorMmPerCssPx()
+    if (!currentMmPerCssPx || !this.referenceMmPerCssPx) return this.userScale
+    return this.userScale * (this.referenceMmPerCssPx / currentMmPerCssPx)
+  }
+
+  private refreshDisplayScale(): void {
+    this.transform.scale = this.actualDisplayScale()
+  }
+
+  private applyDisplayScale(): void {
+    this.refreshDisplayScale()
+    this.clampToSingleWorkarea()
+    this.applyTransform()
+  }
+
+  private captureReferencePhysicalScale(): void {
+    if (this.referenceMmPerCssPx) return
+    this.referenceMmPerCssPx = this.currentMonitorMmPerCssPx()
+  }
+
+  private currentMonitorMmPerCssPx(): number | undefined {
+    const monitor = this.monitors?.find((m) => (m as Rect & { isPrimary?: boolean }).isPrimary)
+      ?? this.monitors?.[0]
+    const value = monitor?.mmPerCssPx
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
   }
 
   private updateDebug(): void {
     const snapshot = this.stateMachine.snapshot
     const monitors = this.monitors
     const monitorLines = monitors && monitors.length > 0
-      ? monitors.map((m, i) => {
+      ? monitors.flatMap((m, i) => {
           const primary = (m as Rect & { isPrimary?: boolean }).isPrimary ? '*' : ' '
-          return `mon[${i}]${primary} x=${Math.round(m.x)} y=${Math.round(m.y)} w=${Math.round(m.width)} h=${Math.round(m.height)}`
+          return [
+            `mon[${i}]${primary} pos=${Math.round(m.x)},${Math.round(m.y)} size=${Math.round(m.width)}x${Math.round(m.height)}`,
+          ]
         })
       : ['monitors: none (viewport-only)']
     const lines = [
       `${this.manifest.meta.name} (${this.manifest.compatibility.sourceFormat})`,
       `control: ${snapshot.controlState}  clip: ${snapshot.clipKey}`,
       `surface: ${this.surface}  reason: ${snapshot.reason}`,
-      `pet: x=${Math.round(this.transform.x)} y=${Math.round(this.transform.y)} s=${this.transform.scale.toFixed(2)} ${this.isDragging ? '[DRAG]' : ''}`,
-      `win: ${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio}`,
+      `pet: x=${Math.round(this.transform.x)} y=${Math.round(this.transform.y)} ${this.isDragging ? '[DRAG]' : ''}`,
+      `scale: user=${this.userScale.toFixed(2)} render=${this.transform.scale.toFixed(2)} lock=${this.keepVisualSizeAcrossDisplays ? 'on' : 'off'}`,
+      `win: ${window.innerWidth}x${window.innerHeight}  dpr=${window.devicePixelRatio}`,
+      `mm/px: cur=${this.currentMonitorMmPerCssPx()?.toFixed(3) ?? 'n/a'} ref=${this.referenceMmPerCssPx?.toFixed(3) ?? 'n/a'}`,
       ...monitorLines,
     ]
     if (this.debugText && this.debugText.visible) this.debugText.text = lines.join('\n')
@@ -551,6 +609,7 @@ export class PetRuntime {
   }
 
   private handleResize = (): void => {
+    this.refreshDisplayScale()
     // When Tauri provides per-monitor rects, snapping here uses stale data until main.ts
     // refetches `get_monitors` — skip to avoid pushing the pet off-screen for one frame.
     if (!this.monitors?.length) {

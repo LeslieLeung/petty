@@ -29,6 +29,9 @@ pub struct MonitorRect {
     width: f64,
     height: f64,
     is_primary: bool,
+    /// Physical millimeters represented by one webview CSS pixel / Cocoa point.
+    /// Present only when the platform can report the monitor's physical size.
+    mm_per_css_px: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,6 +112,7 @@ fn get_monitors_fallback<R: Runtime>(
                 width: ms.width as f64 / scale,
                 height: ms.height as f64 / scale,
                 is_primary,
+                mm_per_css_px: None,
             }
         })
         .collect())

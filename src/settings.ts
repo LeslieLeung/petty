@@ -24,10 +24,10 @@ import type { LegacyPetJson } from './pet-runtime/resource/legacy-adapter'
 
 const root = document.getElementById('settings-root')!
 
-const SCALE_OPTIONS: Array<{ value: number; label: string; nameKey: 'settings.appearance.scale.normal' | 'settings.appearance.scale.large' | 'settings.appearance.scale.xlarge' }> = [
-  { value: 1, label: '1×', nameKey: 'settings.appearance.scale.normal' },
-  { value: 1.5, label: '1.5×', nameKey: 'settings.appearance.scale.large' },
-  { value: 2, label: '2×', nameKey: 'settings.appearance.scale.xlarge' },
+const SCALE_OPTIONS: Array<{ value: number; nameKey: 'settings.appearance.scale.normal' | 'settings.appearance.scale.large' | 'settings.appearance.scale.xlarge' }> = [
+  { value: 0.5, nameKey: 'settings.appearance.scale.normal' },
+  { value: 0.75, nameKey: 'settings.appearance.scale.large' },
+  { value: 1, nameKey: 'settings.appearance.scale.xlarge' },
 ]
 const LANGUAGE_OPTIONS: Array<{ value: LanguagePreference; labelKey: 'settings.appearance.language.system' | 'settings.appearance.language.english' | 'settings.appearance.language.chinese' }> = [
   { value: 'system', labelKey: 'settings.appearance.language.system' },
@@ -36,11 +36,18 @@ const LANGUAGE_OPTIONS: Array<{ value: LanguagePreference; labelKey: 'settings.a
 ]
 const ACTIVE_MODEL_KEY = 'petty.active-model'
 const ZOOM_KEY = 'petty.zoom'
+const KEEP_VISUAL_SIZE_KEY = 'petty.keep-visual-size-across-displays'
 
 let activeModelId = localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'hana'
-let activeScale: number = Number.parseFloat(localStorage.getItem(ZOOM_KEY) ?? '1')
+let activeScale: number = Number.parseFloat(localStorage.getItem(ZOOM_KEY) ?? '0.5')
+let keepVisualSizeAcrossDisplays = getInitialKeepVisualSizeAcrossDisplays()
 let activeLanguagePreference = getLanguagePreference()
 let activeTab: 'models' | 'appearance' | 'about' = 'models'
+
+function getInitialKeepVisualSizeAcrossDisplays(): boolean {
+  const stored = localStorage.getItem(KEEP_VISUAL_SIZE_KEY)
+  return stored === null ? true : stored === 'true'
+}
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -239,8 +246,7 @@ function renderAppearance(container: HTMLElement): void {
             class="scale-option ${activeScale === opt.value ? 'is-active' : ''}"
             data-scale="${opt.value}"
           >
-            <span class="scale-option-label">${opt.label}</span>
-            <span class="scale-option-name">${t(opt.nameKey)}</span>
+            <span class="scale-option-label">${t(opt.nameKey)}</span>
           </button>
         `,
         ).join('')}
@@ -265,6 +271,22 @@ function renderAppearance(container: HTMLElement): void {
         ).join('')}
       </div>
     </div>
+    <div class="setting-row setting-row-inline">
+      <div class="setting-row-label">
+        <span class="setting-label">${t('settings.appearance.visualSizeLock.label')}</span>
+        <span class="setting-desc">${t('settings.appearance.visualSizeLock.description')}</span>
+      </div>
+      <button
+        type="button"
+        class="toggle-switch ${keepVisualSizeAcrossDisplays ? 'is-on' : ''}"
+        data-visual-size-lock
+        role="switch"
+        aria-checked="${keepVisualSizeAcrossDisplays}"
+        aria-label="${t('settings.appearance.visualSizeLock.label')}"
+      >
+        <span class="toggle-switch-thumb"></span>
+      </button>
+    </div>
   `
 
   container.addEventListener('click', (e) => {
@@ -276,7 +298,13 @@ function renderAppearance(container: HTMLElement): void {
     }
 
     const languageBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-language]')
-    if (languageBtn) setLanguage(languageBtn.dataset.language as LanguagePreference)
+    if (languageBtn) {
+      setLanguage(languageBtn.dataset.language as LanguagePreference)
+      return
+    }
+
+    const visualSizeLockBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-visual-size-lock]')
+    if (visualSizeLockBtn) setVisualSizeLock(!keepVisualSizeAcrossDisplays)
   })
 }
 
@@ -295,6 +323,15 @@ function setLanguage(preference: LanguagePreference): void {
   setLanguagePreference(preference)
   emit('language-changed', preference).catch(console.error)
   render()
+}
+
+function setVisualSizeLock(enabled: boolean): void {
+  if (enabled === keepVisualSizeAcrossDisplays) return
+  keepVisualSizeAcrossDisplays = enabled
+  localStorage.setItem(KEEP_VISUAL_SIZE_KEY, String(enabled))
+  emit('change-visual-size-lock', enabled).catch(console.error)
+  const container = document.getElementById('tab-content')
+  if (container && activeTab === 'appearance') renderAppearance(container)
 }
 
 // ── About tab ─────────────────────────────────────────────────────────────────
@@ -338,6 +375,13 @@ function main(): void {
   listen<LanguagePreference>('language-changed', (event) => {
     activeLanguagePreference = event.payload
     render()
+  }).catch(console.warn)
+
+  listen<boolean>('visual-size-lock-changed', (event) => {
+    keepVisualSizeAcrossDisplays = event.payload
+    localStorage.setItem(KEEP_VISUAL_SIZE_KEY, String(event.payload))
+    const container = document.getElementById('tab-content')
+    if (container && activeTab === 'appearance') renderAppearance(container)
   }).catch(console.warn)
 }
 

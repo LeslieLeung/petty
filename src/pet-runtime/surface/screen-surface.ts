@@ -5,6 +5,8 @@ export interface Rect {
   y: number
   width: number
   height: number
+  /** Physical millimeters represented by one CSS pixel on this monitor, when the host can report it. */
+  mmPerCssPx?: number | null
 }
 
 export interface PetBounds {

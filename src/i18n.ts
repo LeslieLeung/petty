@@ -22,6 +22,8 @@ type TranslationKey =
   | 'settings.appearance.scale.normal'
   | 'settings.appearance.scale.large'
   | 'settings.appearance.scale.xlarge'
+  | 'settings.appearance.visualSizeLock.label'
+  | 'settings.appearance.visualSizeLock.description'
   | 'settings.appearance.language.label'
   | 'settings.appearance.language.description'
   | 'settings.appearance.language.system'
@@ -60,9 +62,11 @@ const translations: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     'settings.appearance.description': 'Adjust the size and language of your desktop pet.',
     'settings.appearance.size.label': 'Size',
     'settings.appearance.size.description': 'Choose how large the pet appears on screen.',
-    'settings.appearance.scale.normal': 'Normal',
-    'settings.appearance.scale.large': 'Large',
-    'settings.appearance.scale.xlarge': 'X-Large',
+    'settings.appearance.scale.normal': 'Small',
+    'settings.appearance.scale.large': 'Medium',
+    'settings.appearance.scale.xlarge': 'Large',
+    'settings.appearance.visualSizeLock.label': 'Keep visual size across displays',
+    'settings.appearance.visualSizeLock.description': 'Use each display’s physical size so the pet looks the same size across screens.',
     'settings.appearance.language.label': 'Language',
     'settings.appearance.language.description': 'Use the system language by default, or choose a fixed language.',
     'settings.appearance.language.system': 'System',
@@ -100,9 +104,11 @@ const translations: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     'settings.appearance.description': '调整桌面宠物的大小和语言。',
     'settings.appearance.size.label': '大小',
     'settings.appearance.size.description': '选择宠物在屏幕上显示的尺寸。',
-    'settings.appearance.scale.normal': '普通',
-    'settings.appearance.scale.large': '大',
-    'settings.appearance.scale.xlarge': '超大',
+    'settings.appearance.scale.normal': '小',
+    'settings.appearance.scale.large': '中',
+    'settings.appearance.scale.xlarge': '大',
+    'settings.appearance.visualSizeLock.label': '跨屏保持视觉大小一致',
+    'settings.appearance.visualSizeLock.description': '读取每块屏幕的物理尺寸，让宠物跨屏时看起来保持一样大。',
     'settings.appearance.language.label': '语言',
     'settings.appearance.language.description': '默认跟随系统语言，也可以指定固定语言。',
     'settings.appearance.language.system': '跟随系统',

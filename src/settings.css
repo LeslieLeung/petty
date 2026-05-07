@@ -300,11 +300,24 @@ body {
   margin-bottom: 10px;
 }
 
+.setting-row-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .setting-row-label {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-bottom: 12px;
+}
+
+.setting-row-inline .setting-row-label {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
 }
 
 .setting-label {
@@ -408,6 +421,46 @@ body {
   background: #eff6ff;
   color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.toggle-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #d1d5db;
+  cursor: default;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.toggle-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35);
+}
+
+.toggle-switch.is-on {
+  background: #2563eb;
+}
+
+.toggle-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.24);
+  transition: transform 0.15s;
+}
+
+.toggle-switch.is-on .toggle-switch-thumb {
+  transform: translateX(20px);
 }
 
 /* ── Misc ────────────────────────────────────── */

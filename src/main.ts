@@ -27,10 +27,15 @@ applyLanguageMetadata('Petty')
 // stored models (localStorage) which persist across sessions.
 const runtimeImportedModels: PetModelDefinition[] = []
 
-const SCALE_OPTIONS = [1, 1.5, 2] as const
+const SCALE_OPTIONS = [
+  { value: 0.5, labelKey: 'settings.appearance.scale.normal' },
+  { value: 0.75, labelKey: 'settings.appearance.scale.large' },
+  { value: 1, labelKey: 'settings.appearance.scale.xlarge' },
+] as const
 const ACTIVE_MODEL_KEY = 'petty.active-model'
 const DEBUG_VISIBLE_KEY = 'petty.debug-visible'
 const ZOOM_KEY = 'petty.zoom'
+const KEEP_VISUAL_SIZE_KEY = 'petty.keep-visual-size-across-displays'
 
 let activeModel = resolveModel(localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'hana')
 // `runtime` is guaranteed to be assigned before any event listener can use it (inside startApp).
@@ -64,7 +69,8 @@ function scheduleRefreshMonitors(): void {
   }, 120)
 }
 let debugVisible = getInitialDebugVisible()
-let petScale: number = Number.parseFloat(localStorage.getItem(ZOOM_KEY) ?? '1')
+let petScale: number = Number.parseFloat(localStorage.getItem(ZOOM_KEY) ?? '0.5')
+let keepVisualSizeAcrossDisplays = getInitialKeepVisualSizeAcrossDisplays()
 let isSwitchingModel = false
 let pendingSwitchModelId: string | null = null
 
@@ -87,6 +93,11 @@ function getInitialDebugVisible(): boolean {
   const stored = localStorage.getItem(DEBUG_VISIBLE_KEY)
   if (stored !== null) return stored === 'true'
   return import.meta.env.DEV
+}
+
+function getInitialKeepVisualSizeAcrossDisplays(): boolean {
+  const stored = localStorage.getItem(KEEP_VISUAL_SIZE_KEY)
+  return stored === null ? true : stored === 'true'
 }
 
 document.addEventListener('contextmenu', (event) => event.preventDefault())
@@ -125,6 +136,9 @@ if ('__TAURI_INTERNALS__' in window) {
   listen<number>('change-scale', (event) => {
     applyScale(event.payload)
     updateScaleMenuItems()
+  }).catch(console.error)
+  listen<boolean>('change-visual-size-lock', (event) => {
+    applyVisualSizeLock(event.payload)
   }).catch(console.error)
   listen<LanguagePreference>('language-changed', () => {
     applyLanguageMetadata('Petty')
@@ -182,6 +196,7 @@ function createRuntime(model: PetModelDefinition): PetRuntime {
   return new PetRuntime(model.createManifest(), {
     onContextMenu: ({ x, y }) => menu.show(x, y),
     monitors: cachedMonitors.length > 0 ? cachedMonitors : undefined,
+    keepVisualSizeAcrossDisplays,
     refreshHostMonitorLayout: () => scheduleRefreshMonitors(),
     trackHostCursorScreen: async () => {
       const snapshot = await invoke<HostCursorSnapshot | null>('follow_pet_window_to_cursor_screen')
@@ -218,6 +233,7 @@ function registerRuntimeImportedModel(model: PetModelDefinition): void {
 async function mountRuntime(): Promise<void> {
   await runtime.mount(appRoot)
   runtime.setDebugVisible(debugVisible)
+  runtime.setKeepVisualSizeAcrossDisplays(keepVisualSizeAcrossDisplays)
   runtime.setScale(petScale)
 }
 
@@ -227,6 +243,15 @@ function applyScale(scale: number): void {
   runtime.setScale(scale)
   if ('__TAURI_INTERNALS__' in window) {
     emit('scale-changed', scale).catch(console.error)
+  }
+}
+
+function applyVisualSizeLock(enabled: boolean): void {
+  keepVisualSizeAcrossDisplays = enabled
+  localStorage.setItem(KEEP_VISUAL_SIZE_KEY, String(enabled))
+  runtime.setKeepVisualSizeAcrossDisplays(enabled)
+  if ('__TAURI_INTERNALS__' in window) {
+    emit('visual-size-lock-changed', enabled).catch(console.error)
   }
 }
 
@@ -282,7 +307,7 @@ function createContextMenu(): { element: HTMLDivElement; show: (x: number, y: nu
     <div class="context-menu-separator"></div>
     <div class="context-menu-section-label" data-label="size"></div>
     <div class="context-menu-scale-row">
-      ${SCALE_OPTIONS.map((s) => `<button type="button" class="context-menu-scale-btn" data-action="scale" data-scale="${s}">${s}×</button>`).join('')}
+      ${SCALE_OPTIONS.map((s) => `<button type="button" class="context-menu-scale-btn" data-action="scale" data-scale="${s.value}">${t(s.labelKey)}</button>`).join('')}
     </div>
     <div class="context-menu-separator"></div>
     <button type="button" data-action="toggle-debug"></button>

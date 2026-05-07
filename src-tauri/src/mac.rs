@@ -36,6 +36,20 @@ use tauri::Runtime;
 
 use crate::{HostCursorSnapshot, MonitorRect};
 
+type CGDirectDisplayID = u32;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CGSize {
+    width: f64,
+    height: f64,
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGDisplayScreenSize(display: CGDirectDisplayID) -> CGSize;
+}
+
 // ── Multi-monitor window patch ────────────────────────────────────────────────
 
 // Stable Objective-C runtime C functions used for the multi-monitor patch.
@@ -157,6 +171,7 @@ unsafe fn ns_window_from<R: Runtime>(window: &tauri::Window<R>) -> Option<Retain
 
 fn monitor_rect_for_visible_frame(
     win_frame: NSRect,
+    screen: &NSScreen,
     visible: NSRect,
     is_primary: bool,
 ) -> MonitorRect {
@@ -169,6 +184,32 @@ fn monitor_rect_for_visible_frame(
         width: visible.size.width,
         height: visible.size.height,
         is_primary,
+        mm_per_css_px: screen_mm_per_css_px(screen),
+    }
+}
+
+fn screen_mm_per_css_px(screen: &NSScreen) -> Option<f64> {
+    let frame = screen.frame();
+    if frame.size.width <= 0.0 || frame.size.height <= 0.0 {
+        return None;
+    }
+
+    let display_id: CGDirectDisplayID = unsafe { msg_send![screen, CGDirectDisplayID] };
+    if display_id == 0 {
+        return None;
+    }
+
+    let physical = unsafe { CGDisplayScreenSize(display_id) };
+    if physical.width <= 0.0 || physical.height <= 0.0 {
+        return None;
+    }
+
+    let x_mm_per_point = physical.width / frame.size.width;
+    let y_mm_per_point = physical.height / frame.size.height;
+    if x_mm_per_point.is_finite() && y_mm_per_point.is_finite() {
+        Some((x_mm_per_point + y_mm_per_point) / 2.0)
+    } else {
+        None
     }
 }
 
@@ -204,14 +245,22 @@ pub fn get_monitors_main<R: Runtime>(
         if rect_contains_point(screen.frame(), window_center) {
             return Ok(vec![monitor_rect_for_visible_frame(
                 win_frame,
+                &screen,
                 screen.visibleFrame(),
                 screen_is_main(&screen, main_screen_ptr),
             )]);
         }
     }
 
-    screen_visible_frame_for_window(mtm, &ns_window)
-        .map(|visible| vec![monitor_rect_for_visible_frame(win_frame, visible, false)])
+    screen_for_window(mtm, &ns_window)
+        .map(|screen| {
+            vec![monitor_rect_for_visible_frame(
+                win_frame,
+                &screen,
+                screen.visibleFrame(),
+                false,
+            )]
+        })
         .ok_or_else(|| "current screen unavailable".to_string())
 }
 
@@ -265,12 +314,32 @@ fn screen_visible_frame_containing_point(mtm: MainThreadMarker, point: NSPoint) 
 }
 
 fn screen_visible_frame_for_window(mtm: MainThreadMarker, ns_window: &NSWindow) -> Option<NSRect> {
+    screen_for_window(mtm, ns_window).map(|screen| screen.visibleFrame())
+}
+
+fn screen_for_window(mtm: MainThreadMarker, ns_window: &NSWindow) -> Option<Retained<NSScreen>> {
     let window_frame = ns_window.frame();
     let center = NSPoint::new(
         window_frame.origin.x + window_frame.size.width / 2.0,
         window_frame.origin.y + window_frame.size.height / 2.0,
     );
-    screen_visible_frame_containing_point(mtm, center)
+    screen_containing_point(mtm, center)
+}
+
+fn screen_containing_point(mtm: MainThreadMarker, point: NSPoint) -> Option<Retained<NSScreen>> {
+    let screens = NSScreen::screens(mtm);
+    let mut nearest: Option<(Retained<NSScreen>, f64)> = None;
+    for screen in screens.iter() {
+        let frame = screen.frame();
+        if rect_contains_point(frame, point) {
+            return Some(screen);
+        }
+        let distance = rect_center_distance(frame, point);
+        if nearest.as_ref().map(|(_, best)| distance < *best).unwrap_or(true) {
+            nearest = Some((screen, distance));
+        }
+    }
+    nearest.map(|(screen, _)| screen)
 }
 
 fn set_window_frame_if_needed(ns_window: &NSWindow, frame: NSRect) {
