@@ -97,7 +97,7 @@ export function buildImportedModelId(petJson: LegacyPetJson, folderName: string)
 
 export function folderNameFromFile(file: File): string {
   const rel = webkitRelativePath(file)
-  return rel.split('/')[0] || 'Imported Pet'
+  return rel.split('/')[0] || ''
 }
 
 export function findFileInList(files: File[], filename: string): File | undefined {

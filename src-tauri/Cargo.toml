@@ -4,6 +4,7 @@ version = "0.1.1"
 description = "Petty"
 authors = ["Petty Contributors"]
 edition = "2021"
+default-run = "petty"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -13,6 +14,14 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = ["macos-private-api"] }
 thiserror = "2"
+
+[lib]
+name = "petty_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "petty-agent-hook"
+path = "src/bin/petty-agent-hook.rs"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

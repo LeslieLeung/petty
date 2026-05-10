@@ -24,6 +24,34 @@ interface PetTransform {
 }
 
 type MovementDirection = 'left' | 'right' | 'generic'
+export type AgentRuntimeState = 'idle' | 'thinking' | 'working' | 'waiting' | 'success' | 'error'
+
+export interface AgentBridgeDebugInfo {
+  host?: string
+  port?: number
+  configPath?: string
+  isActive: boolean
+  activeTurnCount: number
+  pendingApprovalCount: number
+  topState: string
+  topStateHint: string
+  sessions: AgentBridgeDebugSession[]
+}
+
+export interface AgentBridgeDebugSession {
+  agentKind: string
+  adapterId: string
+  sessionId: string
+  cwd?: string
+  activeTurns: AgentBridgeDebugTurn[]
+}
+
+export interface AgentBridgeDebugTurn {
+  turnId: string
+  status: string
+  latestToolName?: string
+  latestSummary?: string
+}
 
 export interface PetRuntimeOptions {
   onContextMenu?: (event: { x: number; y: number }) => void
@@ -124,6 +152,9 @@ export class PetRuntime {
   private currentClipDirection: MovementDirection | undefined
   private keyboardActivityUntil = 0
   private lastKeyboardActivityClipAt = 0
+  private agentState: AgentRuntimeState = 'idle'
+  private appliedAgentState: AgentRuntimeState | null = null
+  private agentBridgeDebug?: AgentBridgeDebugInfo
 
   constructor(
     private readonly manifest: RuntimeManifest,
@@ -281,7 +312,12 @@ export class PetRuntime {
     )
   }
 
+  visualBounds(): PetBounds {
+    return this.currentPetBounds()
+  }
+
   notifyKeyboardActivity(_payload?: UserInputActivityPayload): void {
+    if (this.agentState !== 'idle') return
     const now = performance.now()
     this.inactivity.markInteraction()
     this.keyboardActivityUntil = now + KEYBOARD_ACTIVITY_BURST_MS
@@ -296,6 +332,18 @@ export class PetRuntime {
       this.manifest.meta.defaultState,
     ]
     this.playClip(this.stateMachine.requestInteraction(candidates, 'keyboard-activity'))
+  }
+
+  setAgentState(state: AgentRuntimeState): void {
+    if (this.agentState === state) return
+    this.agentState = state
+    if (this.isDragging) return
+    this.applyAgentState()
+  }
+
+  setAgentBridgeDebug(info: AgentBridgeDebugInfo | undefined): void {
+    this.agentBridgeDebug = info
+    this.updateDebug()
   }
 
   private update(deltaMs: number): void {
@@ -313,7 +361,9 @@ export class PetRuntime {
       }
     }
 
-    if (now - this.lastSchedulerTick >= 300) {
+    if (this.agentState !== 'idle' && !this.isDragging) {
+      this.applyAgentState()
+    } else if (now - this.lastSchedulerTick >= 300) {
       this.lastSchedulerTick = now
       const decision = this.scheduler.tick()
       if (decision.clipKey) this.playClip(decision.clipKey)
@@ -329,6 +379,36 @@ export class PetRuntime {
     this.currentClipDirection = this.movementDirectionForClip(clip.key)
     if (this.currentClipDirection === 'left') this.transform.facing = 'left'
     if (this.currentClipDirection === 'right') this.transform.facing = 'right'
+  }
+
+  private applyAgentState(): void {
+    if (this.appliedAgentState === this.agentState) return
+    this.appliedAgentState = this.agentState
+
+    if (this.agentState === 'idle') {
+      this.playClip(this.stateMachine.settle())
+      return
+    }
+
+    const candidates = this.agentClipCandidates(this.agentState)
+    this.playClip(this.stateMachine.requestInteraction(candidates, `agent-${this.agentState}`))
+  }
+
+  private agentClipCandidates(state: AgentRuntimeState): string[] {
+    switch (state) {
+      case 'thinking':
+        return [...(this.manifest.semanticRoles.observe ?? []), this.manifest.meta.defaultState]
+      case 'working':
+        return [...(this.manifest.semanticRoles.busy ?? []), ...(this.manifest.semanticRoles.moveGeneric ?? []), this.manifest.meta.defaultState]
+      case 'waiting':
+        return [...(this.manifest.semanticRoles.doze ?? []), ...(this.manifest.semanticRoles.observe ?? []), this.manifest.meta.defaultState]
+      case 'success':
+        return [...(this.manifest.semanticRoles.jump ?? []), ...(this.manifest.semanticRoles.greet ?? []), this.manifest.meta.defaultState]
+      case 'error':
+        return [...(this.manifest.semanticRoles.failed ?? []), this.manifest.meta.defaultState]
+      case 'idle':
+        return [this.manifest.meta.defaultState]
+    }
   }
 
   private attachInteraction(): void {
@@ -425,6 +505,10 @@ export class PetRuntime {
       this.playClip(this.stateMachine.requestInteraction(interaction ?? ['idle'], isDoubleClick ? 'double-click' : 'click'))
     } else {
       this.playClip(this.stateMachine.recover())
+    }
+    if (this.agentState !== 'idle') {
+      this.appliedAgentState = null
+      this.applyAgentState()
     }
   }
 
@@ -620,9 +704,35 @@ export class PetRuntime {
       `win: ${window.innerWidth}x${window.innerHeight}  dpr=${window.devicePixelRatio}`,
       `mm/px: cur=${this.currentMonitorMmPerCssPx()?.toFixed(3) ?? 'n/a'} ref=${this.referenceMmPerCssPx?.toFixed(3) ?? 'n/a'}`,
       ...monitorLines,
+      ...this.agentBridgeDebugLines(),
     ]
     if (this.debugText && this.debugText.visible) this.debugText.text = lines.join('\n')
     this.positionDebugText()
+  }
+
+  private agentBridgeDebugLines(): string[] {
+    const bridge = this.agentBridgeDebug
+    if (!bridge) return ['agent bridge: unavailable']
+
+    const endpoint = bridge.host && bridge.port ? `${bridge.host}:${bridge.port}` : 'unknown'
+    const lines = [
+      `agent bridge: ${endpoint}  active=${bridge.isActive ? 'yes' : 'no'} state=${bridge.topState}/${bridge.topStateHint}`,
+      `agent turns=${bridge.activeTurnCount} approvals=${bridge.pendingApprovalCount} sessions=${bridge.sessions.length}`,
+    ]
+    if (bridge.configPath) lines.push(`agent config: ${bridge.configPath}`)
+
+    bridge.sessions.slice(0, 3).forEach((session, index) => {
+      const project = session.cwd?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'unknown'
+      const turns = session.activeTurns.length
+      lines.push(`agent session[${index}]: ${session.agentKind}/${session.adapterId} project=${project} turns=${turns}`)
+      session.activeTurns.slice(0, 2).forEach((turn) => {
+        const tool = turn.latestToolName ? ` tool=${turn.latestToolName}` : ''
+        const summary = turn.latestSummary ? ` ${turn.latestSummary}` : ''
+        lines.push(`  turn ${turn.turnId}: ${turn.status}${tool}${summary}`.slice(0, 120))
+      })
+    })
+
+    return lines
   }
 
   /**

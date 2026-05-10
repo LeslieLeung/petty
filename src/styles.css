@@ -137,3 +137,135 @@ canvas {
 .context-menu button.context-menu-danger:hover {
   background: rgba(220, 38, 38, 0.08);
 }
+
+/* ── Agent task bubble ───────────────────────── */
+
+.agent-task-bubble {
+  position: fixed;
+  z-index: 25;
+  box-sizing: border-box;
+  width: min(260px, calc(100vw - 24px));
+  padding: 10px 11px 11px;
+  --agent-task-bubble-bg: rgba(255, 255, 255, 0.62);
+  --agent-task-bubble-border: rgba(255, 255, 255, 0.52);
+  pointer-events: none;
+  color: #111827;
+  background: var(--agent-task-bubble-bg);
+  border: 1px solid var(--agent-task-bubble-border);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 16px rgba(17, 24, 39, 0.1),
+    0 18px 44px rgba(17, 24, 39, 0.1);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.agent-task-bubble.is-interactive {
+  pointer-events: auto;
+}
+
+.agent-task-bubble::before,
+.agent-task-bubble::after {
+  position: absolute;
+  left: 50%;
+  content: '';
+  transform: translateX(-50%);
+}
+
+.agent-task-bubble::before {
+  bottom: -10px;
+  width: 20px;
+  height: 11px;
+  background: var(--agent-task-bubble-border);
+  clip-path: path('M 10,11 C 7,8 0.5,4 1,0 L 19,0 C 19.5,4 13,8 10,11 Z');
+}
+
+.agent-task-bubble::after {
+  bottom: -8px;
+  width: 16px;
+  height: 9px;
+  background: var(--agent-task-bubble-bg);
+  clip-path: path('M 8,9 C 5.5,6.5 0.5,3 0.8,0 L 15.2,0 C 15.5,3 10.5,6.5 8,9 Z');
+}
+
+.agent-task-bubble.is-below-pet::before {
+  bottom: auto;
+  top: -10px;
+  clip-path: path('M 10,0 C 7,3 0.5,7 1,11 L 19,11 C 19.5,7 13,3 10,0 Z');
+}
+
+.agent-task-bubble.is-below-pet::after {
+  bottom: auto;
+  top: -8px;
+  clip-path: path('M 8,0 C 5.5,2.5 0.5,6 0.8,9 L 15.2,9 C 15.5,6 10.5,2.5 8,0 Z');
+}
+
+.agent-task-bubble-task + .agent-task-bubble-task {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(107, 114, 128, 0.22);
+}
+
+.agent-task-bubble-title {
+  margin-bottom: 5px;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-task-bubble-meta {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 7px;
+  color: #6b7280;
+  font-size: 10.5px;
+}
+
+.agent-task-bubble-meta span {
+  min-width: 0;
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-task-bubble-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.agent-task-bubble-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.agent-task-bubble-btn {
+  min-width: 72px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.agent-task-bubble-btn-deny {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.agent-task-bubble-btn-approve {
+  color: #ffffff;
+  background: #2563eb;
+}

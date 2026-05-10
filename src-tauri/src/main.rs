@@ -3,6 +3,10 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager, Runtime};
 
+use petty_agent::agent_bridge::{AgentBridge, AgentBridgeInfo};
+use petty_agent::agent_protocol::{AgentStateSnapshot, ApprovalDecision, ApprovalDecisionInput};
+use petty_agent::codex_installer::{self, CodexIntegrationStatus};
+
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "windows")]
@@ -197,7 +201,7 @@ fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
         "settings",
         tauri::WebviewUrl::App("settings.html".into()),
     )
-    .title("Settings")
+    .title("Petty")
     .inner_size(580.0, 500.0)
     .min_inner_size(480.0, 360.0)
     .center()
@@ -259,6 +263,52 @@ fn follow_pet_window_to_cursor_screen<R: Runtime>(
     }
 }
 
+#[tauri::command]
+fn get_agent_bridge_info(bridge: tauri::State<AgentBridge>) -> AgentBridgeInfo {
+    bridge.info()
+}
+
+#[tauri::command]
+fn get_agent_bridge_state(bridge: tauri::State<AgentBridge>) -> AgentStateSnapshot {
+    bridge.snapshot()
+}
+
+#[tauri::command]
+fn decide_agent_approval(
+    bridge: tauri::State<AgentBridge>,
+    request_id: String,
+    decision: String,
+) -> Result<AgentStateSnapshot, String> {
+    let decision = match decision.as_str() {
+        "approve" => ApprovalDecision::Approve,
+        "deny" => ApprovalDecision::Deny,
+        "fallback" => ApprovalDecision::Fallback,
+        _ => return Err("unknown approval decision".to_string()),
+    };
+    bridge.decide(
+        &request_id,
+        ApprovalDecisionInput {
+            decision,
+            message: None,
+        },
+    )
+}
+
+#[tauri::command]
+fn get_codex_integration_status() -> CodexIntegrationStatus {
+    codex_installer::status()
+}
+
+#[tauri::command]
+fn install_codex_integration() -> Result<CodexIntegrationStatus, String> {
+    codex_installer::install()
+}
+
+#[tauri::command]
+fn uninstall_codex_integration() -> Result<CodexIntegrationStatus, String> {
+    codex_installer::uninstall()
+}
+
 fn start_keyboard_activity_monitor(app: tauri::AppHandle) {
     thread::spawn(move || {
         let poll_interval = Duration::from_millis(KEYBOARD_ACTIVITY_POLL_MS);
@@ -307,6 +357,9 @@ fn unix_time_millis() -> u64 {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            let bridge = AgentBridge::start(app.handle().clone())
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
+            app.manage(bridge);
             if let Some(window) = app.get_webview_window("pet") {
                 let _ = window.set_always_on_top(true);
                 let _ = window.set_decorations(false);
@@ -347,6 +400,12 @@ fn main() {
             set_cursor_ignore,
             fit_pet_window_to_current_screen,
             follow_pet_window_to_cursor_screen,
+            get_agent_bridge_info,
+            get_agent_bridge_state,
+            decide_agent_approval,
+            get_codex_integration_status,
+            install_codex_integration,
+            uninstall_codex_integration,
         ])
         .run(tauri::generate_context!())
         .expect("error while running desktop pet");

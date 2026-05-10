@@ -153,6 +153,31 @@ body {
   background: #1d4ed8;
 }
 
+.secondary-btn {
+  flex-shrink: 0;
+  min-height: 31px;
+  padding: 6px 12px;
+  background: #ffffff;
+  color: #374151;
+  border: 1.5px solid #d1d5db;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.secondary-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.secondary-btn:disabled {
+  color: #9ca3af;
+  opacity: 0.7;
+}
+
 /* ── Model list ──────────────────────────────── */
 
 .model-list {
@@ -478,4 +503,45 @@ body {
   background: rgba(0, 0, 0, 0.06);
   padding: 1px 4px;
   border-radius: 4px;
+}
+
+.integration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.integration-details {
+  display: grid;
+  gap: 7px;
+  padding-top: 2px;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.integration-details div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.integration-details span {
+  color: #6e6e73;
+  font-weight: 500;
+}
+
+.integration-details code {
+  min-width: 0;
+  overflow: hidden;
+  color: #111827;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.integration-details strong {
+  font-size: 12px;
 }

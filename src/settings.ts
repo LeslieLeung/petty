@@ -1,4 +1,5 @@
 import './settings.css'
+import { invoke } from '@tauri-apps/api/core'
 import { emit, listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { petModels } from './pet-models'
@@ -8,6 +9,7 @@ import {
   setLanguagePreference,
   t,
   translateModelDescription,
+  translateUserVisibleError,
   type LanguagePreference,
 } from './i18n'
 import {
@@ -42,7 +44,19 @@ let activeModelId = localStorage.getItem(ACTIVE_MODEL_KEY) ?? 'hana'
 let activeScale: number = Number.parseFloat(localStorage.getItem(ZOOM_KEY) ?? '0.5')
 let keepVisualSizeAcrossDisplays = getInitialKeepVisualSizeAcrossDisplays()
 let activeLanguagePreference = getLanguagePreference()
-let activeTab: 'models' | 'appearance' | 'about' = 'models'
+let activeTab: 'models' | 'appearance' | 'integrations' | 'about' = 'models'
+let codexStatus: CodexIntegrationStatus | null = null
+let codexStatusMessage = ''
+let codexStatusLoading = false
+
+interface CodexIntegrationStatus {
+  enabled: boolean
+  configPath: string
+  hookBinaryPath: string
+  hasFeatureFlag: boolean
+  hasPettyBlock: boolean
+  message: string
+}
 
 function getInitialKeepVisualSizeAcrossDisplays(): boolean {
   const stored = localStorage.getItem(KEEP_VISUAL_SIZE_KEY)
@@ -69,6 +83,12 @@ function render(): void {
           </svg>
           ${t('settings.nav.appearance')}
         </button>
+        <button class="nav-item ${activeTab === 'integrations' ? 'is-active' : ''}" data-tab="integrations">
+          <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M4.75 3A2.75 2.75 0 002 5.75v1.5A2.75 2.75 0 004.75 10h1.5A2.75 2.75 0 009 7.25v-.5h2v.5A2.75 2.75 0 0013.75 10h1.5A2.75 2.75 0 0018 7.25v-1.5A2.75 2.75 0 0015.25 3h-1.5A2.75 2.75 0 0011 5.75v.5H9v-.5A2.75 2.75 0 006.25 3h-1.5zM4 5.75C4 5.336 4.336 5 4.75 5h1.5c.414 0 .75.336.75.75v1.5c0 .414-.336.75-.75.75h-1.5A.75.75 0 014 7.25v-1.5zM13 5.75c0-.414.336-.75.75-.75h1.5c.414 0 .75.336.75.75v1.5c0 .414-.336.75-.75.75h-1.5a.75.75 0 01-.75-.75v-1.5zM4.75 11A2.75 2.75 0 002 13.75v.5A2.75 2.75 0 004.75 17h10.5A2.75 2.75 0 0018 14.25v-.5A2.75 2.75 0 0015.25 11H4.75zM4 13.75c0-.414.336-.75.75-.75h10.5c.414 0 .75.336.75.75v.5c0 .414-.336.75-.75.75H4.75a.75.75 0 01-.75-.75v-.5z" clip-rule="evenodd"/>
+          </svg>
+          ${t('settings.nav.integrations')}
+        </button>
         <button class="nav-item ${activeTab === 'about' ? 'is-active' : ''}" data-tab="about">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
@@ -83,13 +103,14 @@ function render(): void {
   root.querySelector('.sidebar')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-tab]')
     if (!btn) return
-    activeTab = btn.dataset.tab as 'models' | 'appearance' | 'about'
+    activeTab = btn.dataset.tab as 'models' | 'appearance' | 'integrations' | 'about'
     render()
   })
 
   const content = document.getElementById('tab-content')!
   if (activeTab === 'models') renderModels(content)
   else if (activeTab === 'appearance') renderAppearance(content)
+  else if (activeTab === 'integrations') renderIntegrations(content)
   else renderAbout(content)
 }
 
@@ -144,7 +165,7 @@ function renderModels(container: HTMLElement): void {
 
   fileInput.addEventListener('change', () => {
     handleFolderImport(fileInput.files).catch((err: unknown) => {
-      window.alert(err instanceof Error ? err.message : String(err))
+      window.alert(translateUserVisibleError(err))
     })
     fileInput.value = ''
   })
@@ -206,7 +227,7 @@ async function handleFolderImport(files: FileList | null): Promise<void> {
 
   const petJson = JSON.parse(await petJsonFile.text()) as LegacyPetJson
   const spritesheetDataUrl = await fileToDataUrl(spritesheetFile)
-  const folderName = folderNameFromFile(petJsonFile)
+  const folderName = folderNameFromFile(petJsonFile) || t('model.importedPetName')
   const id = buildImportedModelId(petJson, folderName)
 
   const meta: ImportedModelMeta = {
@@ -334,6 +355,115 @@ function setVisualSizeLock(enabled: boolean): void {
   if (container && activeTab === 'appearance') renderAppearance(container)
 }
 
+// ── Integrations tab ──────────────────────────────────────────────────────────
+
+function renderIntegrations(container: HTMLElement): void {
+  const status = codexStatus
+  const codexStatusText = status
+    ? status.enabled
+      ? t('settings.integrations.codex.connected')
+      : t('settings.integrations.codex.disconnected')
+    : t('settings.integrations.codex.checking')
+  container.innerHTML = `
+    <div class="panel-header no-action">
+      <div>
+        <h2>${t('settings.integrations.title')}</h2>
+        <p>${t('settings.integrations.description')}</p>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-row-label">
+        <span class="setting-label">${t('settings.integrations.codex.label')}</span>
+        <span class="setting-desc">${codexStatusText}</span>
+      </div>
+      <div class="integration-actions">
+        <button class="load-btn" type="button" data-codex-action="install">${status?.enabled ? t('settings.integrations.codex.repair') : t('settings.integrations.codex.connect')}</button>
+        <button class="secondary-btn" type="button" data-codex-action="uninstall" ${status?.hasPettyBlock ? '' : 'disabled'}>${t('settings.integrations.codex.disconnect')}</button>
+        <button class="secondary-btn" type="button" data-codex-action="refresh">${t('settings.integrations.codex.refresh')}</button>
+      </div>
+      ${status ? `
+        <div class="integration-details">
+          <div><span>${t('settings.integrations.detail.codexSettings')}</span><code>${escapeHtml(status.configPath)}</code></div>
+          <div><span>${t('settings.integrations.detail.pettyHelper')}</span><code>${escapeHtml(status.hookBinaryPath)}</code></div>
+          <div><span>${t('settings.integrations.detail.codexHooks')}</span><strong>${status.hasFeatureFlag ? t('settings.integrations.detail.enabled') : t('settings.integrations.detail.off')}</strong></div>
+          <div><span>${t('settings.integrations.detail.pettyConnection')}</span><strong>${status.hasPettyBlock ? t('settings.integrations.detail.installed') : t('settings.integrations.detail.missing')}</strong></div>
+        </div>
+      ` : ''}
+      ${codexStatusMessage ? `<p class="hint">${escapeHtml(codexStatusMessage)}</p>` : ''}
+    </div>
+    <div class="setting-row">
+      <div class="setting-row-label">
+        <span class="setting-label">${t('settings.integrations.moreAgents.label')}</span>
+        <span class="setting-desc">${t('settings.integrations.moreAgents.description')}</span>
+      </div>
+    </div>
+  `
+
+  if (!codexStatus && !codexStatusLoading) refreshCodexStatus()
+}
+
+function handleCodexActionClick(e: MouseEvent): void {
+  if (activeTab !== 'integrations') return
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const button = target.closest<HTMLElement>('[data-codex-action]')
+  if (!button || (button instanceof HTMLButtonElement && button.disabled)) return
+  const action = button.dataset.codexAction
+  if (action === 'install') updateCodexIntegration('install_codex_integration')
+  if (action === 'uninstall') updateCodexIntegration('uninstall_codex_integration')
+  if (action === 'refresh') refreshCodexStatus()
+}
+
+function refreshCodexStatus(): void {
+  codexStatusLoading = true
+  invoke<CodexIntegrationStatus>('get_codex_integration_status')
+    .then((status) => {
+      codexStatus = status
+      codexStatusMessage = ''
+      codexStatusLoading = false
+      const container = document.getElementById('tab-content')
+      if (container && activeTab === 'integrations') renderIntegrations(container)
+    })
+    .catch((error) => {
+      codexStatusMessage = translateUserVisibleError(error)
+      codexStatusLoading = false
+      const container = document.getElementById('tab-content')
+      if (container && activeTab === 'integrations') renderIntegrations(container)
+    })
+}
+
+function updateCodexIntegration(command: 'install_codex_integration' | 'uninstall_codex_integration'): void {
+  codexStatusLoading = true
+  codexStatusMessage = t('settings.integrations.codex.updating')
+  const container = document.getElementById('tab-content')
+  if (container && activeTab === 'integrations') renderIntegrations(container)
+  invoke<CodexIntegrationStatus>(command)
+    .then((status) => {
+      codexStatus = status
+      codexStatusMessage = status.enabled
+        ? t('settings.integrations.codex.connected')
+        : t('settings.integrations.codex.disconnected')
+      codexStatusLoading = false
+      const nextContainer = document.getElementById('tab-content')
+      if (nextContainer && activeTab === 'integrations') renderIntegrations(nextContainer)
+    })
+    .catch((error) => {
+      codexStatusMessage = translateUserVisibleError(error)
+      codexStatusLoading = false
+      const nextContainer = document.getElementById('tab-content')
+      if (nextContainer && activeTab === 'integrations') renderIntegrations(nextContainer)
+    })
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
 // ── About tab ─────────────────────────────────────────────────────────────────
 
 function renderAbout(container: HTMLElement): void {
@@ -356,6 +486,7 @@ function renderAbout(container: HTMLElement): void {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 function main(): void {
+  root.addEventListener('click', handleCodexActionClick)
   render()
 
   // Reflect active-model changes that come from the pet window
