@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::fs;
 
 const CODEX_ADAPTER_ID: &str = "codex-hooks";
+const CURSOR_ADAPTER_ID: &str = "cursor-hooks";
 
 #[derive(Debug, Clone)]
 pub enum HookBridgeMessage {
@@ -22,6 +23,7 @@ pub fn map_hook_input(
 ) -> Result<HookBridgeMessage, String> {
     match agent {
         "codex" => map_codex_hook_input(hook_event, input),
+        "cursor" => map_cursor_hook_input(hook_event, input),
         other => Err(format!("unsupported agent: {other}")),
     }
 }
@@ -31,6 +33,85 @@ pub fn codex_stdout_for_decision(decision: ApprovalDecision) -> &'static str {
         ApprovalDecision::Approve => "{\"decision\":\"allow\"}\n",
         ApprovalDecision::Deny => "{\"decision\":\"deny\"}\n",
         ApprovalDecision::Fallback => "{}\n",
+    }
+}
+
+fn map_cursor_hook_input(hook_event: &str, input: &Value) -> Result<HookBridgeMessage, String> {
+    // conversation_id is stable across turns; generation_id changes per user message.
+    let session_id = optional_string(input, "conversation_id")
+        .or_else(|| optional_string(input, "session_id"))
+        .unwrap_or_else(|| "cursor-session-unknown".to_string());
+    let turn_id = optional_string(input, "generation_id");
+    let cwd = optional_string(input, "cwd").or_else(|| {
+        input
+            .get("workspace_roots")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    });
+    let tool_name =
+        optional_string(input, "tool_name").or_else(|| optional_string(input, "toolName"));
+    let tool_use_id =
+        optional_string(input, "tool_use_id").or_else(|| optional_string(input, "toolUseId"));
+    let timestamp = now_millis();
+    let capabilities = Some(AgentCapabilities {
+        status_events: true,
+        approval_decision: false,
+        speech: false,
+    });
+
+    let event = |event_type: AgentEventType,
+                 state_hint: Option<AgentStateHint>,
+                 summary: Option<String>| {
+        HookBridgeMessage::Event(AgentEvent {
+            agent_kind: AgentKind::Cursor,
+            adapter_id: CURSOR_ADAPTER_ID.to_string(),
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+            event_type,
+            cwd: cwd.clone(),
+            capabilities: capabilities.clone(),
+            state_hint,
+            tool_name: tool_name.clone(),
+            summary,
+            timestamp,
+        })
+    };
+
+    match hook_event {
+        "sessionStart" => Ok(event(
+            AgentEventType::SessionStarted,
+            Some(AgentStateHint::Thinking),
+            None,
+        )),
+        "beforeSubmitPrompt" => {
+            let summary =
+                optional_string(input, "prompt").map(|p| first_line(&truncate_text(&p, 180)));
+            Ok(event(
+                AgentEventType::TurnStarted,
+                Some(AgentStateHint::Working),
+                summary,
+            ))
+        }
+        "preToolUse" => Ok(event(
+            AgentEventType::ToolStarted,
+            state_for_tool(tool_name.as_deref()),
+            tool_summary(input).or_else(|| tool_use_id.clone()),
+        )),
+        "postToolUse" => Ok(event(
+            AgentEventType::ToolFinished,
+            state_for_tool(tool_name.as_deref()),
+            tool_summary(input).or(tool_use_id),
+        )),
+        "stop" | "sessionEnd" => {
+            let state_hint = match optional_string(input, "status").as_deref() {
+                Some("error") => AgentStateHint::Error,
+                _ => AgentStateHint::Idle,
+            };
+            Ok(event(AgentEventType::TurnStopped, Some(state_hint), None))
+        }
+        _ => Ok(HookBridgeMessage::None),
     }
 }
 

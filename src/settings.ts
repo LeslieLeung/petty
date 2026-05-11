@@ -48,6 +48,9 @@ let activeTab: 'models' | 'appearance' | 'integrations' | 'about' = 'models'
 let codexStatus: CodexIntegrationStatus | null = null
 let codexStatusMessage = ''
 let codexStatusLoading = false
+let cursorStatus: CursorIntegrationStatus | null = null
+let cursorStatusMessage = ''
+let cursorStatusLoading = false
 
 interface CodexIntegrationStatus {
   enabled: boolean
@@ -55,6 +58,14 @@ interface CodexIntegrationStatus {
   hookBinaryPath: string
   hasFeatureFlag: boolean
   hasPettyBlock: boolean
+  message: string
+}
+
+interface CursorIntegrationStatus {
+  enabled: boolean
+  configPath: string
+  hookBinaryPath: string
+  hasPettyHooks: boolean
   message: string
 }
 
@@ -358,12 +369,20 @@ function setVisualSizeLock(enabled: boolean): void {
 // ── Integrations tab ──────────────────────────────────────────────────────────
 
 function renderIntegrations(container: HTMLElement): void {
-  const status = codexStatus
-  const codexStatusText = status
-    ? status.enabled
+  const codexSt = codexStatus
+  const codexStatusText = codexSt
+    ? codexSt.enabled
       ? t('settings.integrations.codex.connected')
       : t('settings.integrations.codex.disconnected')
     : t('settings.integrations.codex.checking')
+
+  const cursorSt = cursorStatus
+  const cursorStatusText = cursorSt
+    ? cursorSt.enabled
+      ? t('settings.integrations.cursor.connected')
+      : t('settings.integrations.cursor.disconnected')
+    : t('settings.integrations.cursor.checking')
+
   container.innerHTML = `
     <div class="panel-header no-action">
       <div>
@@ -377,19 +396,38 @@ function renderIntegrations(container: HTMLElement): void {
         <span class="setting-desc">${codexStatusText}</span>
       </div>
       <div class="integration-actions">
-        <button class="load-btn" type="button" data-codex-action="install">${status?.enabled ? t('settings.integrations.codex.repair') : t('settings.integrations.codex.connect')}</button>
-        <button class="secondary-btn" type="button" data-codex-action="uninstall" ${status?.hasPettyBlock ? '' : 'disabled'}>${t('settings.integrations.codex.disconnect')}</button>
+        <button class="load-btn" type="button" data-codex-action="install">${codexSt?.enabled ? t('settings.integrations.codex.repair') : t('settings.integrations.codex.connect')}</button>
+        <button class="secondary-btn" type="button" data-codex-action="uninstall" ${codexSt?.hasPettyBlock ? '' : 'disabled'}>${t('settings.integrations.codex.disconnect')}</button>
         <button class="secondary-btn" type="button" data-codex-action="refresh">${t('settings.integrations.codex.refresh')}</button>
       </div>
-      ${status ? `
+      ${codexSt ? `
         <div class="integration-details">
-          <div><span>${t('settings.integrations.detail.codexSettings')}</span><code>${escapeHtml(status.configPath)}</code></div>
-          <div><span>${t('settings.integrations.detail.pettyHelper')}</span><code>${escapeHtml(status.hookBinaryPath)}</code></div>
-          <div><span>${t('settings.integrations.detail.codexHooks')}</span><strong>${status.hasFeatureFlag ? t('settings.integrations.detail.enabled') : t('settings.integrations.detail.off')}</strong></div>
-          <div><span>${t('settings.integrations.detail.pettyConnection')}</span><strong>${status.hasPettyBlock ? t('settings.integrations.detail.installed') : t('settings.integrations.detail.missing')}</strong></div>
+          <div><span>${t('settings.integrations.detail.codexSettings')}</span><code>${escapeHtml(codexSt.configPath)}</code></div>
+          <div><span>${t('settings.integrations.detail.pettyHelper')}</span><code>${escapeHtml(codexSt.hookBinaryPath)}</code></div>
+          <div><span>${t('settings.integrations.detail.codexHooks')}</span><strong>${codexSt.hasFeatureFlag ? t('settings.integrations.detail.enabled') : t('settings.integrations.detail.off')}</strong></div>
+          <div><span>${t('settings.integrations.detail.pettyConnection')}</span><strong>${codexSt.hasPettyBlock ? t('settings.integrations.detail.installed') : t('settings.integrations.detail.missing')}</strong></div>
         </div>
       ` : ''}
       ${codexStatusMessage ? `<p class="hint">${escapeHtml(codexStatusMessage)}</p>` : ''}
+    </div>
+    <div class="setting-row">
+      <div class="setting-row-label">
+        <span class="setting-label">${t('settings.integrations.cursor.label')}</span>
+        <span class="setting-desc">${cursorStatusText}</span>
+      </div>
+      <div class="integration-actions">
+        <button class="load-btn" type="button" data-cursor-action="install">${cursorSt?.enabled ? t('settings.integrations.cursor.repair') : t('settings.integrations.cursor.connect')}</button>
+        <button class="secondary-btn" type="button" data-cursor-action="uninstall" ${cursorSt?.hasPettyHooks ? '' : 'disabled'}>${t('settings.integrations.cursor.disconnect')}</button>
+        <button class="secondary-btn" type="button" data-cursor-action="refresh">${t('settings.integrations.cursor.refresh')}</button>
+      </div>
+      ${cursorSt ? `
+        <div class="integration-details">
+          <div><span>${t('settings.integrations.detail.cursorSettings')}</span><code>${escapeHtml(cursorSt.configPath)}</code></div>
+          <div><span>${t('settings.integrations.detail.pettyHelper')}</span><code>${escapeHtml(cursorSt.hookBinaryPath)}</code></div>
+          <div><span>${t('settings.integrations.detail.cursorHooks')}</span><strong>${cursorSt.hasPettyHooks ? t('settings.integrations.detail.installed') : t('settings.integrations.detail.missing')}</strong></div>
+        </div>
+      ` : ''}
+      ${cursorStatusMessage ? `<p class="hint">${escapeHtml(cursorStatusMessage)}</p>` : ''}
     </div>
     <div class="setting-row">
       <div class="setting-row-label">
@@ -400,6 +438,7 @@ function renderIntegrations(container: HTMLElement): void {
   `
 
   if (!codexStatus && !codexStatusLoading) refreshCodexStatus()
+  if (!cursorStatus && !cursorStatusLoading) refreshCursorStatus()
 }
 
 function handleCodexActionClick(e: MouseEvent): void {
@@ -412,6 +451,18 @@ function handleCodexActionClick(e: MouseEvent): void {
   if (action === 'install') updateCodexIntegration('install_codex_integration')
   if (action === 'uninstall') updateCodexIntegration('uninstall_codex_integration')
   if (action === 'refresh') refreshCodexStatus()
+}
+
+function handleCursorActionClick(e: MouseEvent): void {
+  if (activeTab !== 'integrations') return
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const button = target.closest<HTMLElement>('[data-cursor-action]')
+  if (!button || (button instanceof HTMLButtonElement && button.disabled)) return
+  const action = button.dataset.cursorAction
+  if (action === 'install') updateCursorIntegration('install_cursor_integration')
+  if (action === 'uninstall') updateCursorIntegration('uninstall_cursor_integration')
+  if (action === 'refresh') refreshCursorStatus()
 }
 
 function refreshCodexStatus(): void {
@@ -455,6 +506,47 @@ function updateCodexIntegration(command: 'install_codex_integration' | 'uninstal
     })
 }
 
+function refreshCursorStatus(): void {
+  cursorStatusLoading = true
+  invoke<CursorIntegrationStatus>('get_cursor_integration_status')
+    .then((status) => {
+      cursorStatus = status
+      cursorStatusMessage = ''
+      cursorStatusLoading = false
+      const container = document.getElementById('tab-content')
+      if (container && activeTab === 'integrations') renderIntegrations(container)
+    })
+    .catch((error) => {
+      cursorStatusMessage = translateUserVisibleError(error)
+      cursorStatusLoading = false
+      const container = document.getElementById('tab-content')
+      if (container && activeTab === 'integrations') renderIntegrations(container)
+    })
+}
+
+function updateCursorIntegration(command: 'install_cursor_integration' | 'uninstall_cursor_integration'): void {
+  cursorStatusLoading = true
+  cursorStatusMessage = t('settings.integrations.cursor.updating')
+  const container = document.getElementById('tab-content')
+  if (container && activeTab === 'integrations') renderIntegrations(container)
+  invoke<CursorIntegrationStatus>(command)
+    .then((status) => {
+      cursorStatus = status
+      cursorStatusMessage = status.enabled
+        ? t('settings.integrations.cursor.connected')
+        : t('settings.integrations.cursor.disconnected')
+      cursorStatusLoading = false
+      const nextContainer = document.getElementById('tab-content')
+      if (nextContainer && activeTab === 'integrations') renderIntegrations(nextContainer)
+    })
+    .catch((error) => {
+      cursorStatusMessage = translateUserVisibleError(error)
+      cursorStatusLoading = false
+      const nextContainer = document.getElementById('tab-content')
+      if (nextContainer && activeTab === 'integrations') renderIntegrations(nextContainer)
+    })
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -487,6 +579,7 @@ function renderAbout(container: HTMLElement): void {
 
 function main(): void {
   root.addEventListener('click', handleCodexActionClick)
+  root.addEventListener('click', handleCursorActionClick)
   render()
 
   // Reflect active-model changes that come from the pet window

@@ -93,7 +93,7 @@ interface HostCursorSnapshot {
 
 type BridgeTopState = 'idle' | 'thinking' | 'working' | 'awaitingApproval' | 'error'
 type AgentStateHint = 'thinking' | 'working' | 'editing' | 'running' | 'testing' | 'waiting' | 'success' | 'error' | 'idle'
-type AgentKind = 'codex' | 'claude-code' | 'opencode' | 'custom'
+type AgentKind = 'codex' | 'claude-code' | 'opencode' | 'cursor' | 'custom'
 
 interface ApprovalView {
   requestId: string
@@ -771,6 +771,7 @@ function agentDisplayName(agentKind: AgentKind): string {
   if (agentKind === 'codex') return t('agent.name.codex')
   if (agentKind === 'claude-code') return t('agent.name.claudeCode')
   if (agentKind === 'opencode') return t('agent.name.opencode')
+  if (agentKind === 'cursor') return t('agent.name.cursor')
   return t('agent.name.generic')
 }
 

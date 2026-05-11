@@ -6,6 +6,7 @@ use tauri::{Emitter, Manager, Runtime};
 use petty_agent::agent_bridge::{AgentBridge, AgentBridgeInfo};
 use petty_agent::agent_protocol::{AgentStateSnapshot, ApprovalDecision, ApprovalDecisionInput};
 use petty_agent::codex_installer::{self, CodexIntegrationStatus};
+use petty_agent::cursor_installer::{self, CursorIntegrationStatus};
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -309,6 +310,21 @@ fn uninstall_codex_integration() -> Result<CodexIntegrationStatus, String> {
     codex_installer::uninstall()
 }
 
+#[tauri::command]
+fn get_cursor_integration_status() -> CursorIntegrationStatus {
+    cursor_installer::status()
+}
+
+#[tauri::command]
+fn install_cursor_integration() -> Result<CursorIntegrationStatus, String> {
+    cursor_installer::install()
+}
+
+#[tauri::command]
+fn uninstall_cursor_integration() -> Result<CursorIntegrationStatus, String> {
+    cursor_installer::uninstall()
+}
+
 fn start_keyboard_activity_monitor(app: tauri::AppHandle) {
     thread::spawn(move || {
         let poll_interval = Duration::from_millis(KEYBOARD_ACTIVITY_POLL_MS);
@@ -406,6 +422,9 @@ fn main() {
             get_codex_integration_status,
             install_codex_integration,
             uninstall_codex_integration,
+            get_cursor_integration_status,
+            install_cursor_integration,
+            uninstall_cursor_integration,
         ])
         .run(tauri::generate_context!())
         .expect("error while running desktop pet");

@@ -17,6 +17,7 @@ pub enum AgentKind {
     Codex,
     ClaudeCode,
     Opencode,
+    Cursor,
     Custom,
 }
 

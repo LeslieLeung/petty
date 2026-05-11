@@ -49,6 +49,17 @@ type TranslationKey =
   | 'settings.integrations.detail.off'
   | 'settings.integrations.detail.installed'
   | 'settings.integrations.detail.missing'
+  | 'settings.integrations.cursor.label'
+  | 'settings.integrations.cursor.connected'
+  | 'settings.integrations.cursor.disconnected'
+  | 'settings.integrations.cursor.checking'
+  | 'settings.integrations.cursor.connect'
+  | 'settings.integrations.cursor.repair'
+  | 'settings.integrations.cursor.disconnect'
+  | 'settings.integrations.cursor.refresh'
+  | 'settings.integrations.cursor.updating'
+  | 'settings.integrations.detail.cursorSettings'
+  | 'settings.integrations.detail.cursorHooks'
   | 'settings.integrations.moreAgents.label'
   | 'settings.integrations.moreAgents.description'
   | 'settings.about.title'
@@ -64,6 +75,7 @@ type TranslationKey =
   | 'agent.name.codex'
   | 'agent.name.claudeCode'
   | 'agent.name.opencode'
+  | 'agent.name.cursor'
   | 'agent.name.generic'
   | 'agent.state.thinking'
   | 'agent.state.editing'
@@ -168,6 +180,17 @@ const translations: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     'settings.integrations.detail.off': 'off',
     'settings.integrations.detail.installed': 'installed',
     'settings.integrations.detail.missing': 'missing',
+    'settings.integrations.cursor.label': 'Cursor',
+    'settings.integrations.cursor.connected': 'Cursor is connected. Petty can show what Cursor is doing.',
+    'settings.integrations.cursor.disconnected': 'Cursor is not connected yet. Enable it to let Petty follow Cursor activity.',
+    'settings.integrations.cursor.checking': 'Checking Cursor connection...',
+    'settings.integrations.cursor.connect': 'Connect Cursor',
+    'settings.integrations.cursor.repair': 'Repair Connection',
+    'settings.integrations.cursor.disconnect': 'Disconnect',
+    'settings.integrations.cursor.refresh': 'Check Again',
+    'settings.integrations.cursor.updating': 'Updating Cursor connection...',
+    'settings.integrations.detail.cursorSettings': 'Cursor hooks config',
+    'settings.integrations.detail.cursorHooks': 'Petty hooks',
     'settings.integrations.moreAgents.label': 'More agents',
     'settings.integrations.moreAgents.description': 'Claude Code and OpenCode support can be added later.',
     'settings.about.title': 'About Petty',
@@ -183,6 +206,7 @@ const translations: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     'agent.name.codex': 'Codex',
     'agent.name.claudeCode': 'Claude Code',
     'agent.name.opencode': 'OpenCode',
+    'agent.name.cursor': 'Cursor',
     'agent.name.generic': 'Agent',
     'agent.state.thinking': 'is thinking',
     'agent.state.editing': 'is editing',
@@ -286,6 +310,17 @@ const translations: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     'settings.integrations.detail.off': '关闭',
     'settings.integrations.detail.installed': '已安装',
     'settings.integrations.detail.missing': '缺失',
+    'settings.integrations.cursor.label': 'Cursor',
+    'settings.integrations.cursor.connected': 'Cursor 已连接。Petty 可以显示 Cursor 正在做什么。',
+    'settings.integrations.cursor.disconnected': 'Cursor 还没有连接。连接后，Petty 就能跟随 Cursor 的工作状态。',
+    'settings.integrations.cursor.checking': '正在检查 Cursor 连接...',
+    'settings.integrations.cursor.connect': '连接 Cursor',
+    'settings.integrations.cursor.repair': '修复连接',
+    'settings.integrations.cursor.disconnect': '断开连接',
+    'settings.integrations.cursor.refresh': '重新检查',
+    'settings.integrations.cursor.updating': '正在更新 Cursor 连接...',
+    'settings.integrations.detail.cursorSettings': 'Cursor hooks 配置',
+    'settings.integrations.detail.cursorHooks': 'Petty hooks',
     'settings.integrations.moreAgents.label': '更多助手',
     'settings.integrations.moreAgents.description': '之后可以继续添加 Claude Code 和 OpenCode 支持。',
     'settings.about.title': '关于 Petty',
@@ -301,6 +336,7 @@ const translations: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     'agent.name.codex': 'Codex',
     'agent.name.claudeCode': 'Claude Code',
     'agent.name.opencode': 'OpenCode',
+    'agent.name.cursor': 'Cursor',
     'agent.name.generic': 'Agent',
     'agent.state.thinking': '正在思考',
     'agent.state.editing': '正在改代码',
